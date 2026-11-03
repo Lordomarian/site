@@ -46,7 +46,7 @@
         "name": "Лечение кариеса",
         "offers": {
           "@type": "Offer",
-          "price": "6000–8000",
+          "price": 6000,
           "priceCurrency": "RUB"
         }
       },
@@ -55,7 +55,7 @@
         "name": "Профессиональная гигиена полости рта",
         "offers": {
           "@type": "Offer",
-          "price": "6000",
+          "price": 6000,
           "priceCurrency": "RUB"
         }
       },
@@ -64,7 +64,7 @@
         "name": "Лечение каналов (эндодонтия)",
         "offers": {
           "@type": "Offer",
-          "price": "от 10000",
+          "price": 10000,
           "priceCurrency": "RUB"
         }
       },
@@ -73,7 +73,7 @@
         "name": "Эстетическая реставрация зуба",
         "offers": {
           "@type": "Offer",
-          "price": "8000",
+          "price": 8000,
           "priceCurrency": "RUB"
         }
       },
@@ -82,7 +82,7 @@
         "name": "Отбеливание зубов",
         "offers": {
           "@type": "Offer",
-          "price": "18000",
+          "price": 18000,
           "priceCurrency": "RUB"
         }
       }
@@ -417,7 +417,7 @@
     }
 
     .language-switch {
-      display: inline-flex;
+      display: none;
       padding: 3px;
       border: 1px solid var(--color-border);
       border-radius: var(--radius-sm);
@@ -809,6 +809,18 @@
 
     .form-field {
       margin-bottom: 20px;
+    }
+
+    .form-trap {
+      position: absolute;
+      overflow: hidden;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      border: 0;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
     .form-field label:not(.consent-label) {
@@ -1712,31 +1724,32 @@
             <p class="form-intro">Поля, отмеченные <span class="required-mark">*</span>, обязательны для заполнения.</p>
 
             <!--
-              Настройка Formspree:
-              1. Зарегистрируйтесь на https://formspree.io и создайте новую форму.
-              2. Скопируйте выданный ID и замените [ВАШ_ID] в action ниже.
-              3. Подтвердите email и отправьте тестовую заявку с опубликованной страницы.
-
-              Альтернатива: заявки можно передавать в Telegram через Make (Integromat),
-              используя сценарий Formspree/Webhook → Telegram. Здесь это не реализовано.
+              В Make добавьте между webhook и остальными модулями фильтр:
+              website пустой, consent равен yes, elapsed_ms не меньше 3000.
+              Браузерные проверки не заменяют фильтр и ограничение частоты запросов в Make.
             -->
-            <form id="appointment-form" action="https://formspree.io/f/[ВАШ_ID]" method="POST" novalidate>
+            <form id="appointment-form" action="https://hook.eu1.make.com/68ah2zv9m12smm7zstheyn77cynnpiwh" method="POST" novalidate>
+              <div class="form-trap" aria-hidden="true">
+                <label for="website">Не заполняйте это поле</label>
+                <input id="website" name="website" type="text" autocomplete="off" tabindex="-1">
+              </div>
+
               <div class="form-field">
                 <label for="name">Имя <span class="required-mark" aria-hidden="true">*</span></label>
-                <input class="form-control" id="name" name="name" type="text" autocomplete="name" placeholder="Как к вам обращаться" required aria-describedby="name-error">
+                <input class="form-control" id="name" name="name" type="text" autocomplete="name" maxlength="80" placeholder="Как к вам обращаться" required aria-describedby="name-error">
                 <span class="field-error" id="name-error"></span>
               </div>
 
               <div class="form-field">
                 <label for="phone">Телефон <span class="required-mark" aria-hidden="true">*</span></label>
-                <input class="form-control" id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="[+7 (XXX) XXX-XX-XX]" required aria-describedby="phone-hint phone-error">
-                <span class="field-hint" id="phone-hint">Укажите не менее 10 цифр</span>
+                <input class="form-control" id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="30" placeholder="[+7 (XXX) XXX-XX-XX]" required aria-describedby="phone-hint phone-error">
+                <span class="field-hint" id="phone-hint">Укажите от 10 до 15 цифр</span>
                 <span class="field-error" id="phone-error"></span>
               </div>
 
               <div class="form-field">
                 <label for="comment">Комментарий</label>
-                <textarea class="form-control" id="comment" name="comment" placeholder="Что вас беспокоит или когда вам удобно прийти?"></textarea>
+                <textarea class="form-control" id="comment" name="comment" maxlength="1000" placeholder="Что вас беспокоит или когда вам удобно прийти?"></textarea>
               </div>
 
               <div class="form-field">
@@ -1941,6 +1954,12 @@
       const nameInput = document.getElementById('name');
       const phoneInput = document.getElementById('phone');
       const consentInput = document.getElementById('consent');
+      const websiteInput = document.getElementById('website');
+      const formStartedAt = Date.now();
+      const minFillTimeMs = 3000;
+      const submissionCooldownMs = 60000;
+      const requestTimeoutMs = 15000;
+      const lastSubmissionKey = 'appointmentLastSubmission';
 
       const setFieldError = (input, message) => {
         const errorElement = document.getElementById(`${input.id}-error`);
@@ -1964,23 +1983,24 @@
       };
 
       const validateForm = () => {
-        let isValid = true;
         const phoneDigits = phoneInput.value.match(/\d/g) || [];
+        const isNameValid = Boolean(nameInput.value.trim());
+        const isPhoneValid = /^[\d\s()+.-]+$/.test(phoneInput.value.trim())
+          && phoneDigits.length >= 10
+          && phoneDigits.length <= 15;
+        const isConsentValid = consentInput.checked;
 
-        setFieldError(nameInput, nameInput.value.trim() ? '' : 'Введите имя.');
-        setFieldError(phoneInput, phoneDigits.length >= 10 ? '' : 'Введите телефон: не менее 10 цифр.');
-        setFieldError(consentInput, consentInput.checked ? '' : 'Подтвердите согласие на обработку данных.');
+        setFieldError(nameInput, isNameValid ? '' : 'Введите имя.');
+        setFieldError(phoneInput, isPhoneValid ? '' : 'Введите телефон: от 10 до 15 цифр, без букв.');
+        setFieldError(consentInput, isConsentValid ? '' : 'Подтвердите согласие на обработку данных.');
 
-        if (!nameInput.value.trim() || phoneDigits.length < 10 || !consentInput.checked) {
-          isValid = false;
-        }
-
-        if (!isValid) {
+        if (!isNameValid || !isPhoneValid || !isConsentValid) {
           const firstInvalidField = form.querySelector('[aria-invalid="true"]');
           if (firstInvalidField) firstInvalidField.focus();
+          return false;
         }
 
-        return isValid;
+        return true;
       };
 
       form.addEventListener('input', (event) => {
@@ -1994,32 +2014,69 @@
         event.preventDefault();
         clearFormStatus();
 
+        if (websiteInput.value) {
+          form.reset();
+          showFormStatus('Спасибо! Заявка принята.', 'success');
+          return;
+        }
+
         if (!validateForm()) return;
+
+        const elapsedMs = Date.now() - formStartedAt;
+        if (elapsedMs < minFillTimeMs) {
+          showFormStatus('Подождите несколько секунд и отправьте форму ещё раз.', 'error');
+          return;
+        }
+
+        let lastSubmissionAt = 0;
+        try {
+          lastSubmissionAt = Number(localStorage.getItem(lastSubmissionKey)) || 0;
+        } catch {}
+
+        const remainingCooldownMs = submissionCooldownMs - (Date.now() - lastSubmissionAt);
+        if (remainingCooldownMs > 0) {
+          showFormStatus(`Повторная отправка будет доступна через ${Math.ceil(remainingCooldownMs / 1000)} сек.`, 'error');
+          return;
+        }
 
         submitButton.disabled = true;
         submitButton.textContent = 'Отправляем…';
 
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs);
+
         try {
+          const payload = new FormData(form);
+          payload.append('elapsed_ms', String(elapsedMs));
+          payload.append('submitted_at', new Date().toISOString());
+          payload.append('page_url', window.location.href);
+
           const response = await fetch(form.action, {
             method: form.method,
-            body: new FormData(form),
-            headers: {
-              'Accept': 'application/json'
-            }
+            body: payload,
+            signal: controller.signal
           });
 
           if (!response.ok) {
             throw new Error('Form submission failed');
           }
 
+          try {
+            localStorage.setItem(lastSubmissionKey, String(Date.now()));
+          } catch {}
+
           form.reset();
           form.querySelectorAll('[aria-invalid="true"]').forEach((field) => {
             field.removeAttribute('aria-invalid');
           });
-          showFormStatus('Спасибо, я свяжусь с вами в ближайшее время', 'success');
+          showFormStatus('Спасибо! Заявка принята, я свяжусь с вами в ближайшее время.', 'success');
         } catch (error) {
-          showFormStatus('Не удалось отправить, попробуйте позвонить', 'error');
+          const message = error.name === 'AbortError'
+            ? 'Сервер не ответил вовремя. Проверьте соединение и попробуйте ещё раз.'
+            : 'Не удалось отправить заявку. Попробуйте ещё раз или позвоните.';
+          showFormStatus(message, 'error');
         } finally {
+          window.clearTimeout(timeoutId);
           submitButton.disabled = false;
           submitButton.innerHTML = submitButtonContent;
         }
