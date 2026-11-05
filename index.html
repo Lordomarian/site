@@ -1986,12 +1986,12 @@
         const phoneDigits = phoneInput.value.match(/\d/g) || [];
         const isNameValid = Boolean(nameInput.value.trim());
         const isPhoneValid = /^[\d\s()+.-]+$/.test(phoneInput.value.trim())
-          && phoneDigits.length >= 10
+          && phoneDigits.length >= 11
           && phoneDigits.length <= 15;
         const isConsentValid = consentInput.checked;
 
         setFieldError(nameInput, isNameValid ? '' : 'Введите имя.');
-        setFieldError(phoneInput, isPhoneValid ? '' : 'Введите телефон: от 10 до 15 цифр, без букв.');
+        setFieldError(phoneInput, isPhoneValid ? '' : 'Введите телефон: от 11 до 15 цифр, без букв.');
         setFieldError(consentInput, isConsentValid ? '' : 'Подтвердите согласие на обработку данных.');
 
         if (!isNameValid || !isPhoneValid || !isConsentValid) {
